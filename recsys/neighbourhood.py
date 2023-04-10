@@ -8,21 +8,38 @@ random_matrix = np.array([0,4,657,34,6557])
 
 
 
-class NeigbourhoodRecSys : 
+class UserNeigbourhoodRecSys : 
     
     
     """
-    User Based NeigbourhoodRecSys : Explicit Ratings
-    Requirements : 
-    1.User Rating Matrix
-    2.Similarity Method (Cosine,Pearson)
-    3.Imputation Method for Sparse Matrix 
-    4.Prediction Function -> accomodate bias,etc
-    5.Preprocessing Function --> substracting mean -> 
+    NeigbourhoodRecSys based on User Similarity on Explicit Ratings 
+    
+    
+    >>user_rating_matrix = np.array([
+                [1,np.nan,3,np.nan,np.nan,5,np.nan,np.nan,5,np.nan,4,np.nan],
+                [np.nan,np.nan,5,4,np.nan,np.nan,4,np.nan,np.nan,2,1,3],
+                [2,4,np.nan,1,2,np.nan,3,np.nan,4,3,5,np.nan],
+                [np.nan,2,4,np.nan,5,np.nan,np.nan,4,np.nan,np.nan,2,np.nan],
+                [np.nan,np.nan,4,3,4,2,np.nan,np.nan,np.nan,np.nan,2,5],
+                [1,np.nan,3,np.nan,3,np.nan,np.nan,2,np.nan,np.nan,4,np.nan]]).T
+    >> model = NeigbourhoodRecSys()
+    >> model.fit(user_rating_matrix)
+    >> #prediction 
+    >> model._predict(user_x=0,item_i=0)
+    > # get recommendation  
+    >> model..get_recommendation(user_idx=0)
+
     
     
     """
     def __init__(self,similarity_method='cosine',missing_imputation='negative',n_neighbour=5) -> None:
+        """Initialization Process
+
+        Args:
+            similarity_method (str, optional): Similarity Method . Defaults to 'cosine'.
+            missing_imputation (str, optional): _description_. Defaults to 'negative'.
+            n_neighbour (int, optional): _description_. Defaults to 5.
+        """
         self.similarity_method= similarity_method
         self.missing_imputation = missing_imputation
         self.n_neighbour = n_neighbour
@@ -200,7 +217,7 @@ if __name__ == '__main__' :
                 [1,np.nan,3,np.nan,3,np.nan,np.nan,2,np.nan,np.nan,4,np.nan]]).T
 
 
-    recsys = NeigbourhoodRecSys()
+    recsys = UserNeigbourhoodRecSys()
 
     recsys.fit(example_URM)
 
