@@ -29,13 +29,20 @@ class SVDBaseRecSys :
     
     
     """
-    def __init__(self,missing_imputation='negative',n_factor=10,n_epochs=100,lr=0.005,regularization_terms=0.02,random_state=42) -> None:
-        """Initialization Process
+    def __init__(self,missing_imputation='negative',n_factor=10,n_epochs=100,lr=0.005,regularization_terms=0.02,random_state=42,
+                 impute_missing=False) -> None:
+        """
+        Initialization Process of SVD Based Model for Recommender System . Idea is pretty straightforward. Rating matrix could be decomposed into 3 separate matrix 
+        and the model itself is trying to do the reverse -> build matrix random first -> optimize with SGD -> get the optimal matrix 
 
         Args:
-            similarity_method (str, optional): Similarity Method . Defaults to 'cosine'.
             missing_imputation (str, optional): _description_. Defaults to 'negative'.
-            n_neighbour (int, optional): _description_. Defaults to 5.
+            n_factor (int, optional): _description_. Defaults to 10.
+            n_epochs (int, optional): _description_. Defaults to 100.
+            lr (float, optional): _description_. Defaults to 0.005.
+            regularization_terms (float, optional): _description_. Defaults to 0.02.
+            random_state (int, optional): _description_. Defaults to 42.
+            impute_missing (bool, optional): _description_. Defaults to False.
         """
         self.missing_imputation = missing_imputation
         self.n_factor  = n_factor
@@ -44,6 +51,7 @@ class SVDBaseRecSys :
         self.lr = lr
         self.loss = 0 
         self.state = np.random.RandomState(random_state)
+        self.impute_missing = impute_missing 
 
     def convert_utility_matrix(self,utility_matrix) :
         """Convert utility matrix with structure of n_user x n_items with value ratings into array with 3 column structure 
@@ -78,9 +86,10 @@ class SVDBaseRecSys :
         """
         #save missing location for prediction purpose 
         self.missing_location = np.argwhere(np.isnan(user_rating_matrix))
+        
         for col in range(user_rating_matrix.shape[0]) : 
             mean = np.nanmean(user_rating_matrix[col])
-            user_rating_matrix[col][np.isnan(user_rating_matrix[col])] = 0
+            user_rating_matrix[col][np.isnan(user_rating_matrix[col])] = self.global_mean
 
 
         return user_rating_matrix 
@@ -93,9 +102,15 @@ class SVDBaseRecSys :
     
     def fit(self,X) : 
         self.original_utility_matrix = X 
-        self.user_rating_matrix = self.preprocess_user_rating_matrix(X) 
+        self.global_mean = np.nanmean(X)
         self.n_users,self.n_items = X.shape
-        self.user_rating_matrix = self.convert_utility_matrix(self.user_rating_matrix)
+        if self.impute_missing : 
+            
+            self.user_rating_matrix = self.preprocess_user_rating_matrix(X) 
+            self.user_rating_matrix = self.convert_utility_matrix(self.user_rating_matrix)
+        
+        
+        self.user_rating_matrix = self.convert_utility_matrix(X)
         
         
         
@@ -108,7 +123,7 @@ class SVDBaseRecSys :
         self.v_factor = self.state.normal(size=(self.n_items,self.n_factor))
         
         #find global mean of the data 
-        self.global_mean = np.nanmean(X)
+        
         
         #utility matrix len 
         loop_length = len(self.user_rating_matrix)
@@ -120,9 +135,9 @@ class SVDBaseRecSys :
                 user_id =  int(self.user_rating_matrix[idx][0])
                 item_id =  int(self.user_rating_matrix[idx][1])
                 rating =  self.user_rating_matrix[idx][2]
-
+                print('rating',rating)
                 
-                if rating == np.nan : 
+                if np.isnan(ratings) : 
                     continue 
                 
                 user_bias = self.user_bias[user_id]
@@ -141,7 +156,7 @@ class SVDBaseRecSys :
                 #calculate prediction of ratings 
                 r_hat = self.global_mean + user_bias + item_bias + dot 
 
-                #calculate error , using MSE 
+                #calculate error , using MSE + regularization terms 
                 current_loss = (rating - r_hat)
 
                 self.loss += current_loss 
@@ -170,7 +185,7 @@ class SVDBaseRecSys :
             
             
         
-    def _predict(self,user_x,item_i) : 
+    def _predict(self,user_id,item_id) : 
         """_summary_
 
         Args:
@@ -180,58 +195,48 @@ class SVDBaseRecSys :
         Returns:
             _type_: _description_
         """
+        user_bias = self.user_bias[user_id]
+        item_bias = self.item_bias[item_id]
         
+        u_factor_user = self.u_factor[user_id]
+        # get latent factor of user_
+        v_factor_item = self.v_factor[item_id]
+        
+        # dot product between <u_factor_user,v_factor_item> 
+        dot = np.dot(u_factor_user,v_factor_item.T)
+
+        #calculate prediction of ratings 
+        r_hat = self.global_mean + user_bias + item_bias + dot 
         
         
 
         
-        return None 
+        return r_hat 
             
         
         
         
-    def get_recommendation(self,user_idx,recommend_only_missing=True,top_k=5) : 
-        """Recommend best top K item for user=user_idx
-            Approach -> repredict missing rating only -> sort best on the highest-k (could be set)
-        Args:
-            user_idx (_type_): user_idx to recommend
-
-        Returns:
-            _type_: _description_
-        """
-        #predict only missing value of the data 
-        #finding missing_value on spesific user_idx
-        missing_item_idx = []
-        #missing location has shape of mxn (similar of user rating matrix) m -> user_idx and n-> item_index
-        for missing_loc in self.missing_location : 
-            if missing_loc[0]==user_idx : 
-                missing_item_idx.append(missing_loc[1])
-            else : 
+    def get_recommendation(self,user_id,recommend_only_missing=True,top_k=5) : 
+        ratings = []
+        highest_val = 0 
+        list_of_recommendation = []
+        for idx in range(len(self.user_rating_matrix)) : 
+            recommendation = {'user': user_id}
+            user = int(self.user_rating_matrix[idx][0])
+            if user != user_id : 
                 continue 
-        #call user_rating_matrix = 
-        user_idx_rating_matrix = self.user_rating_matrix[user_idx]
-        
-        #refill again the missing ones 
-        for idx in missing_item_idx : 
-            user_idx_rating_matrix[idx]= self._predict(user_x=user_idx,item_i=idx)
-        #with assumption that rated item will not be recommended again 
-        
-        recommendation  = {}
-        if recommend_only_missing : 
-            missing_ratings = user_idx_rating_matrix[missing_item_idx]
-            rank = np.argsort(missing_ratings)[::-1][:top_k]
-            sorted_ratings = missing_ratings[rank]
-        
-        
-            for x,y in zip(rank,sorted_ratings) : 
-                recommendation[f'Item ID : {x} ']= y
-        else : 
-            rank = np.argsort(user_idx_rating_matrix)[::-1][:top_k]
-            sorted_ratings = user_idx_rating_matrix[rank]
-            for x,y in zip(rank,sorted_ratings) : 
-                recommendation[f'Item ID : {x} ']= y
-                
-        return recommendation
+            item_id =  int(self.user_rating_matrix[idx][1])
+
+            r_hat = self._predict(user_id=user,item_id=item_id)
+            ratings.append(r_hat)
+        ratings = np.array(ratings)
+        rank = np.argsort(ratings)[::-1][:top_k]
+        sorted_ratings = ratings[rank]
+        for x,y in zip(rank,sorted_ratings) : 
+            recommendation = {}
+            recommendation[f'Item ID : {x} ']= y
+            list_of_recommendation.append(recommendation)
+        return list_of_recommendation
     
     
 
@@ -247,11 +252,39 @@ example_URM = np.array([
             [1,np.nan,3,np.nan,3,np.nan,np.nan,2,np.nan,np.nan,4,np.nan]]).T
 
 
-recsys = SVDBaseRecSys()
+recsys = SVDBaseRecSys(impute_missing=True)
 
 recsys.fit(example_URM)
-
+recsys.u_factor
+matrix_3_col = recsys.convert_utility_matrix(example_URM)
+matrix_3_col
+error = 0  
+count = 0 
+for idx_ in range(len(matrix_3_col)) : 
+    user  =int(matrix_3_col[idx_][0])
+    item = int(matrix_3_col[idx_][1])
+    ratings = matrix_3_col[idx_][2]
+    print('ratings',ratings)
+    if np.isnan(ratings) : 
+        continue 
+    preds = recsys._predict(user_id=user,item_id=item)[0]
+    print('preds',preds)
+    error += (ratings-preds)**2
+    count+=1 
+error
+recsys.get_recommendation(user_id=0)
+np.sqrt(error / count)
 print('bias',recsys.v_factor)
-# print(recsys._predict(user_x=0,item_i=0))
+
+print(recsys._predict(user_id=1,item_id=0))
 
 # print(recsys.get_recommendation(user_idx=0))
+
+arr = np.array([5,6,7])
+arr1 = np.array([6,7,8])
+arr2 = np.array([9,8,7])
+#create stack column 
+stacked = np.vstack([arr,arr1,arr2]).T
+
+
+np.sort(stacked)
